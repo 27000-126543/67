@@ -48,7 +48,7 @@ export default function Sidebar() {
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
             <div className="text-center">
-              <p className="text-blue-400 font-semibold">{player.spirits.length}</p>
+              <p className="text-blue-400 font-semibold">{(player.spirits || []).length}</p>
               <p className="text-gray-500">精灵</p>
             </div>
             <div className="text-center">

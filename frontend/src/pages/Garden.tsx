@@ -11,16 +11,18 @@ export default function Garden() {
   const [captureTarget, setCaptureTarget] = useState<string | null>(null);
   const [captureResult, setCaptureResult] = useState<any>(null);
   const [tick, setTick] = useState(0);
+  const [isExploring, setIsExploring] = useState(false);
+  const [exploreMessage, setExploreMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const i = setInterval(() => setTick(t => t + 1), 1000);
     return () => clearInterval(i);
   }, []);
 
-  if (!player) return null;
+  if (!player || !player.garden) return null;
 
   const garden = player.garden;
-  const activeEncounters = garden.attractedSpirits.filter(e => !e.isCaptured && Date.now() < e.expiresAt);
+  const activeEncounters = (garden.attractedSpirits || []).filter(e => !e.isCaptured && Date.now() < e.expiresAt);
 
   const handlePlant = async (plantId: string) => {
     const res = await fetch('/api/garden/plant', {
@@ -92,6 +94,33 @@ export default function Garden() {
     }
   };
 
+  const handleExplore = async () => {
+    if (!player) return;
+    setIsExploring(true);
+    setExploreMessage(null);
+    try {
+      const res = await fetch('/api/garden/explore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId: player.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.player) setPlayer(data.player);
+        if (data.message) {
+          setExploreMessage(data.message);
+          setTimeout(() => setExploreMessage(null), 3000);
+        }
+      } else {
+        alert(data.error);
+      }
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setIsExploring(false);
+    }
+  };
+
   const plantSlots = Array.from({ length: garden.size }, (_, i) => garden.plants.filter(p => !p.harvested)[i]);
 
   return (
@@ -102,10 +131,13 @@ export default function Garden() {
           <p className="text-gray-400">种植魔法植物，吸引野生精灵降临</p>
         </div>
         <div className="flex gap-3">
+          <button onClick={handleExplore} disabled={isExploring} className="magic-btn">
+            {isExploring ? '🔍 探索中...' : '🔍 探索吸引精灵'}
+          </button>
           <button onClick={() => setShowPlantShop(true)} className="magic-btn magic-btn-success">
             🌱 植物商店
           </button>
-          <button onClick={() => setShowBallShop(true)} className="magic-btn">
+          <button onClick={() => setShowBallShop(true)} className="magic-btn magic-btn-secondary">
             🔴 精灵球商店
           </button>
         </div>
@@ -116,6 +148,12 @@ export default function Garden() {
           captureResult.success ? 'bg-green-500/20 border border-green-500 text-green-400' : 'bg-red-500/20 border border-red-500 text-red-400'
         }`}>
           {captureResult.success ? '🎉 捕获成功！精灵已加入你的队伍！' : `💔 捕获失败...（成功率: ${(captureResult.rate * 100).toFixed(1)}%）`}
+        </div>
+      )}
+
+      {exploreMessage && (
+        <div className="p-4 rounded-xl text-center text-lg font-semibold bg-magic-purple/20 border border-magic-purple/50 text-magic-purple animate-pulse">
+          {exploreMessage}
         </div>
       )}
 
@@ -247,7 +285,7 @@ export default function Garden() {
                           收获
                         </button>
                       ) : (
-                        <p className="text-xs text-gray-500 mt-1">{Math.ceil((total - elapsed) / 1000)}s</p>
+                        <p className="text-xs text-gray-500 mt-1">{Math.max(0, Math.ceil((total - elapsed) / 1000))}s</p>
                       )}
                     </div>
                   </>

@@ -76,8 +76,11 @@ export default function App() {
     socket.on('announcement', (data: Announcement) => {
       addAnnouncement(data);
     });
-    socket.on('battle_found', (data: { battleId: string; opponentName: string }) => {
+    socket.on('battle_found', (data: { battle: ActiveBattle; opponentName: string }) => {
       console.log('战斗已找到:', data);
+      if (data.battle) {
+        setActiveBattle(data.battle);
+      }
     });
     socket.on('battle_update', (battle: ActiveBattle) => {
       setActiveBattle(battle);

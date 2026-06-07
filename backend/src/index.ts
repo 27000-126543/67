@@ -39,11 +39,14 @@ const broadcastAnnouncement = (announcement: Announcement) => {
 setInterval(() => {
   const allPlayers = gameState.getAllPlayers();
   allPlayers.forEach(player => {
+    if (!player.garden) return;
     const growthResult = updatePlantGrowth(player.garden);
+    player.garden = growthResult.garden;
     if (player.guildId) {
       const guild = gameState.getGuild(player.guildId);
       if (guild) {
-        updatePlantGrowth(guild.jointGarden);
+        const guildGrowthResult = updatePlantGrowth(guild.jointGarden);
+        guild.jointGarden = guildGrowthResult.garden;
       }
     }
     if (Date.now() > player.garden.weatherExpiryTime) {
@@ -88,8 +91,8 @@ setInterval(() => {
         gameState.removeFromMatchmakingQueue(p1.id);
         gameState.removeFromMatchmakingQueue(p2.id);
 
-        io.to(p1.id).emit('battle_found', { battleId: battle.id, opponentName: p2.displayName });
-        io.to(p2.id).emit('battle_found', { battleId: battle.id, opponentName: p1.displayName });
+        io.to(p1.id).emit('battle_found', { battle, opponentName: p2.displayName });
+        io.to(p2.id).emit('battle_found', { battle, opponentName: p1.displayName });
       }
     }
   }
@@ -163,6 +166,43 @@ app.post('/api/garden/remove-plant', (req, res) => {
   player.garden = removeHarvestedPlant(player.garden, plantId);
   gameState.updatePlayer(player);
   res.json(player);
+});
+
+app.post('/api/garden/explore', (req, res) => {
+  const { playerId } = req.body;
+  const player = gameState.getPlayer(playerId);
+  if (!player) return res.status(404).json({ error: '玩家不存在' });
+
+  const hasReadyPlants = player.garden.plants.some(p => p.isReady && !p.harvested);
+  const hasGrowingPlants = player.garden.plants.some(p => !p.harvested);
+
+  if (!hasGrowingPlants) {
+    return res.status(400).json({ error: '请先种植一些魔法植物来吸引精灵！' });
+  }
+
+  const maxEncounters = 3;
+  const currentEncounters = player.garden.attractedSpirits.filter(
+    e => !e.isCaptured && Date.now() < e.expiresAt
+  );
+
+  if (currentEncounters.length >= maxEncounters) {
+    return res.status(400).json({ error: '花园中精灵太多了，请先捕获一些！' });
+  }
+
+  const encounter = generateWildEncounter(player.garden);
+  if (!encounter) {
+    return res.status(400).json({ error: '暂时没有精灵出现，试试种植更多植物？' });
+  }
+
+  if (!hasReadyPlants && Math.random() > 0.4) {
+    return res.json({ player, encounter: null, message: '探索中...精灵还未出现，继续等待植物成熟吧！' });
+  }
+
+  player.garden.attractedSpirits.push(encounter);
+  io.to(player.id).emit('spirit_appeared', encounter);
+  gameState.updatePlayer(player);
+
+  res.json({ player, encounter, message: '发现野生精灵！' });
 });
 
 app.get('/api/garden/:playerId/appearances', (req, res) => {
@@ -707,7 +747,7 @@ io.on('connection', (socket) => {
 
     const battle = createActiveBattle(playerId, aiId, spirit, aiSpirit);
     gameState.addActiveBattle(battle);
-    io.to(playerId).emit('battle_found', { battleId: battle.id, opponentName: 'AI对手' });
+    io.to(playerId).emit('battle_found', { battle, opponentName: 'AI对手' });
   });
 
   socket.on('disconnect', () => {
